@@ -1,0 +1,120 @@
+a. Which locations have the highest property prices?
+
+--Extracting the most up to date price from the Revisions file
+With Revision_Latest as (
+SELECT *     
+FROM dbo.revision T1    
+WHERE price_revision_dt = (
+   SELECT max(price_revision_dt)
+   FROM revision T2
+   WHERE T1.listing_id=T2.listing_id
+)
+)
+--Updating the Listing table for the latest purchase price from the revisions table where applicable
+Update dbo.Listing
+SET asking_price = R.revised_purchase_price
+FROM Revision_Latest as R
+WHERE R.listing_id = dbo.Listing.listing_id;
+
+--Updating the Listing table for the latest listing date from the revisions table
+Update dbo.Listing
+SET listing_dt = R.price_revision_dt
+FROM Revision_Latest as R
+WHERE R.listing_id = dbo.Listing.listing_id;
+
+-- Removing rows where bedroom/bathroom count is 0 as data likely unreliable, retrieved from property website
+DELETE
+FROM dbo.listing
+WHERE bedroom_count = 0 AND bathroom_count = 0
+
+-- Ranking by highest average price
+Select location, ROUND(avg(asking_price),2) as price_avg
+From dbo.Listing
+Group by location
+order by price_avg desc;
+
+--Avg house price per bedroom
+select location, ROUND(AVG(CASE WHEN property_type = 'House' then asking_price/bedroom_count END),2) as house_price_bedroom_avg
+from dbo.Listing
+group by location
+order by house_price_bedroom_avg desc
+
+--Avg flat price per bedroom
+select location, ROUND(AVG(CASE WHEN property_type = 'Flat' then asking_price/bedroom_count END),2) as flat_price_bedroom_avg
+from dbo.Listing
+group by location
+order by flat_price_bedroom_avg desc
+
+-- Highest Property Value by Location and Property Type
+SELECT location, MAX(asking_price) as Max_Price, property_type
+FROM dbo.Listing
+GROUP BY location, property_type
+ORDER BY Max_Price desc;
+
+b. Which locations have experienced the fastest growth in asking prices over the
+period?
+--Split by 2020, 2021, 2022 by changing date in WHERE clause of query
+
+-- Average price in 202X by location
+Select location, ROUND(avg(asking_price),2) as price_avg
+From dbo.Listing$
+where year(listing_dt) in (2020) AND bedroom_count != 0 AND bathroom_count != 0
+Group by location
+order by price_avg desc
+c. Do growth rates for houses and flats differ? Provide an interpretation / justification
+for your answer.
+-- Average house price in 202X by location
+select location, ROUND(AVG( CASE WHEN property_type = 'House' THEN asking_price END),2) AS house_avg_price
+From dbo.Listing$
+where year(listing_dt) in (2022) AND bedroom_count != 0 AND bathroom_count != 0
+Group by location
+order by house_avg_price desc;
+
+-- Average flat price in 202X by location
+select location, ROUND(AVG(CASE WHEN property_type = 'Flat' THEN asking_price END),2) AS flat_avg_price
+from dbo.Listing$
+where year(listing_dt) in (2021) AND bedroom_count != 0 AND bathroom_count != 0
+group by location
+order by flat_avg_price desc;
+Q.2 
+Carrying out an analysis of price revisions and preparing a summary of your findings suitable to present to business stakeholders.
+
+-- Finding dates on which most common number of times revisions made down.
+
+SELECT datepart(year, price_revision_dt),datepart(month, price_revision_dt), property_type, COUNT(*) as No_of_price_revisions_down
+FROM (dbo.revision$ AS a
+	LEFT JOIN dbo.listing$ b
+		ON a.listing_id = b.listing_id)
+WHERE bedroom_count != 0 AND bathroom_count != 0 AND (revised_purchase_price - asking_price) < 0
+GROUP BY datepart(year, price_revision_dt), datepart(month, price_revision_dt), property_type
+ORDER by 1,2 asc;
+
+--e.g location vs no_of_revs_down TOTAL
+
+SELECT location, COUNT(*) as No_of_price_revisions_down
+FROM (dbo.revision$ AS a
+	LEFT JOIN dbo.listing$ b
+		ON a.listing_id = b.listing_id)
+WHERE bedroom_count != 0 AND bathroom_count != 0 AND (revised_purchase_price - asking_price) < 0
+GROUP by location
+ORDER by 2 desc;
+
+--e.g location vs no_of_revs_down by year 
+
+SELECT location, COUNT(*) as No_of_price_revisions_down
+FROM (dbo.revision$ AS a
+	LEFT JOIN dbo.listing$ b
+		ON a.listing_id = b.listing_id)
+WHERE bedroom_count != 0 AND bathroom_count != 0 AND year(listing_dt) in (2022) AND (revised_purchase_price - asking_price) < 0
+GROUP by location
+ORDER by 2 desc;
+
+-- Variables vs price revisions down
+
+SELECT b.listing_id, property_type, tenure, bedroom_count, bathroom_count, location, asking_price, COUNT(*) as No_of_price_revisions_down
+FROM (dbo.revision$ AS a
+	LEFT JOIN dbo.listing$ b
+		ON a.listing_id = b.listing_id)
+WHERE bedroom_count != 0 AND bathroom_count != 0 AND (revised_purchase_price - asking_price) < 0 AND tenure != 'unknown'
+GROUP by b.listing_id, property_type, tenure, bedroom_count, bathroom_count, location, asking_price
+ORDER by 1 desc;
